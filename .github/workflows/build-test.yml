@@ -1,0 +1,39 @@
+name: Installateurs de test macOS
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: macos-test-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: macos-latest
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - name: Tester la véritable application Electron
+        run: node scripts/smoke.mjs
+      - name: Construire les DMG et ZIP de test
+        run: npm run dist -- --x64 --arm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Predictions-macOS-test
+          path: |
+            dist/*.dmg
+            dist/*.zip
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Interface-macOS
+          path: test-results/

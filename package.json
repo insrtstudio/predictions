@@ -1,0 +1,76 @@
+{
+  "name": "predictions-desktop",
+  "version": "0.1.0",
+  "description": "Atelier statistique EuroMillions, Loto et EuroDreams",
+  "author": "insrtstudio",
+  "private": true,
+  "type": "module",
+  "main": "src/main.mjs",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "postinstall": "install-electron",
+    "start": "electron .",
+    "test": "node --test test/*.test.mjs",
+    "sync:seed": "node scripts/sync-seed.mjs",
+    "dist": "electron-builder --mac dmg zip --publish never",
+    "release": "electron-builder --mac dmg zip --publish always"
+  },
+  "dependencies": {
+    "electron-updater": "6.8.9",
+    "fflate": "0.8.3"
+  },
+  "devDependencies": {
+    "electron": "44.3.0",
+    "electron-builder": "26.15.3",
+    "playwright": "1.63.0"
+  },
+  "build": {
+    "appId": "studio.insrt.predictions",
+    "productName": "Predictions",
+    "artifactName": "Predictions-${version}-${arch}.${ext}",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "data/**/*",
+      "package.json"
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "insrtstudio",
+        "repo": "predictions",
+        "releaseType": "release"
+      }
+    ],
+    "mac": {
+      "icon": "build/icon.png",
+      "category": "public.app-category.utilities",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
+    },
+    "dmg": {
+      "title": "Installer Predictions",
+      "contents": [
+        {
+          "x": 140,
+          "y": 180
+        },
+        {
+          "x": 410,
+          "y": 180,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    }
+  }
+}

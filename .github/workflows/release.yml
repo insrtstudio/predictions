@@ -1,0 +1,38 @@
+name: Version macOS signée
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: macos-release
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: macos-latest
+    env:
+      CSC_LINK: ${{ secrets.CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Vérifier la signature et la version
+        shell: bash
+        run: |
+          test -n "$CSC_LINK" || { echo "Configurer le certificat Developer ID Application dans CSC_LINK."; exit 1; }
+          test -n "$APPLE_ID" && test -n "$APPLE_APP_SPECIFIC_PASSWORD" && test -n "$APPLE_TEAM_ID" || { echo "Configurer les secrets de notarisation Apple."; exit 1; }
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            test "${GITHUB_REF_NAME}" = "v$(node -p 'require("./package.json").version')"
+          fi
+      - run: npm ci
+      - run: npm test
+      - name: Construire, signer et notariser Intel et Apple Silicon
+        run: npx electron-builder --mac dmg zip --x64 --arm64 --publish always -c.forceCodeSigning=true
