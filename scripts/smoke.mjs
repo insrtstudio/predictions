@@ -6,7 +6,8 @@ import path from 'node:path';
 const dir=await mkdtemp(path.join(tmpdir(),'predictions-smoke-')),errors=[];
 await mkdir('test-results',{recursive:true});
 const packaged=process.argv.includes('--packaged');
-async function launch(){return electron.launch({args:packaged?[]:['.'],...(packaged?{executablePath:path.resolve(process.arch==='arm64'?'dist/mac-arm64/Predictions.app/Contents/MacOS/Predictions':'dist/mac/Predictions.app/Contents/MacOS/Predictions')} :{}),env:{...process.env,PREDICTIONS_TEST:'1',PREDICTIONS_DATA_DIR:dir}});}
+const deliveredApp=process.env.PREDICTIONS_APP_PATH;
+async function launch(){return electron.launch({args:packaged?[]:['.'],...(packaged?{executablePath:deliveredApp?path.join(deliveredApp,'Contents/MacOS/Predictions'):path.resolve(process.arch==='arm64'?'dist/mac-arm64/Predictions.app/Contents/MacOS/Predictions':'dist/mac/Predictions.app/Contents/MacOS/Predictions')} :{}),env:{...process.env,PREDICTIONS_TEST:'1',PREDICTIONS_DATA_DIR:dir}});}
 let app;
 try{
  app=await launch();let w=await app.firstWindow();w.on('pageerror',e=>errors.push(e.message));await w.waitForSelector('.heatmap');

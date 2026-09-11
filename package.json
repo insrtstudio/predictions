@@ -1,6 +1,6 @@
 {
   "name": "predictions-desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Atelier statistique EuroMillions, Loto et EuroDreams",
   "author": "insrtstudio",
   "private": true,
@@ -15,6 +15,7 @@
     "test": "node --test test/*.test.mjs",
     "sync:seed": "node scripts/sync-seed.mjs",
     "dist": "electron-builder --mac dmg zip --publish never",
+    "dist:test": "electron-builder --mac dmg zip --publish never -c.mac.identity=- -c.mac.entitlements=build/entitlements.test.mac.plist -c.mac.entitlementsInherit=build/entitlements.test.mac.plist",
     "release": "electron-builder --mac dmg zip --publish always"
   },
   "dependencies": {

@@ -10,7 +10,15 @@ concurrency:
   cancel-in-progress: true
 jobs:
   build:
-    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: macos-15-intel
+          - arch: arm64
+            runner: macos-15
+    runs-on: ${{ matrix.runner }}
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
@@ -21,21 +29,53 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
-      - name: Tester la véritable application Electron
-        run: node scripts/smoke.mjs
       - name: Construire les DMG et ZIP de test
-        run: npm run dist -- --x64 --arm64 -c.mac.identity=-
-      - name: Tester l’application empaquetée
-        run: node scripts/smoke.mjs --packaged
+        run: npm run dist:test -- --${{ matrix.arch }}
       - uses: actions/upload-artifact@v4
         with:
-          name: Predictions-macOS-test
+          name: Predictions-macOS-test-${{ matrix.arch }}
           path: |
             dist/*.dmg
             dist/*.zip
           retention-days: 14
+  verify-installed:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: macos-15-intel
+          - arch: arm64
+            runner: macos-15
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: Predictions-macOS-test-${{ matrix.arch }}
+          path: dist
+      - name: Installer depuis le DMG sur une nouvelle machine
+        shell: bash
+        run: |
+          version=$(node -p 'require("./package.json").version')
+          mount="$RUNNER_TEMP/predictions-mount"
+          mkdir -p "$mount"
+          hdiutil attach "dist/Predictions-$version-${{ matrix.arch }}.dmg" -readonly -nobrowse -mountpoint "$mount"
+          trap 'hdiutil detach "$mount"' EXIT
+          ditto "$mount/Predictions.app" "/Applications/Predictions.app"
+          node scripts/verify-macos-signature.mjs /Applications/Predictions.app
+      - name: Tester le démarrage et les parcours après installation
+        env:
+          PREDICTIONS_APP_PATH: /Applications/Predictions.app
+        run: node scripts/smoke.mjs --packaged
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: Interface-macOS
+          name: Interface-macOS-${{ matrix.arch }}
           path: test-results/

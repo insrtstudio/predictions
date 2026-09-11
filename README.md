@@ -11,10 +11,16 @@ npm start
 
 ```sh
 npm test
-npm run dist -- --x64 --arm64
+npm run dist:test -- --x64 --arm64
 ```
 
 Les installateurs sont dans `dist/`. Ouvrir le DMG puis glisser Predictions dans Applications. Une version locale sans certificat est un build de test non signé, susceptible d’être bloqué par Gatekeeper. Ne pas la confondre avec une version signée et notariée.
+
+### Correctif 0.1.1 : crash au démarrage sur Intel
+
+La version 0.1.0 associait une signature ad hoc, sans Team ID Apple, au Hardened Runtime sans exception de validation des bibliothèques. Sur certains Mac, dyld refusait de charger Electron avec l’erreur « different Team IDs ». `dist:test` utilise désormais un fichier d’entitlements propre aux tests : JIT et chargement de bibliothèques avec signature ad hoc, en conservant le Hardened Runtime. La configuration de publication Developer ID garde ses entitlements distincts, sans cette exception.
+
+La CI construit chaque architecture nativement puis installe le DMG dans `/Applications` sur une autre VM macOS 15, Intel et Apple Silicon. Elle vérifie la signature et les entitlements du binaire principal et des assistants, puis exécute les parcours de l’application après installation. Ce contrôle remplace la seule exécution sur la machine ayant construit le paquet, insuffisante pour détecter le crash de la 0.1.0. Les tests ne constituent pas une validation Gatekeeper ou de notarisation.
 
 ## Fonctionnalités
 
