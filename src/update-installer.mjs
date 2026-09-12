@@ -7,6 +7,17 @@ import {execFile,spawn} from 'node:child_process';
 import {promisify} from 'node:util';
 const exec=promisify(execFile);
 export async function digest(file){const h=createHash('sha512');for await(const chunk of createReadStream(file))h.update(chunk);return h.digest('base64');}
+export function supportsArchitecture(bytes,arch){
+ const cpu=arch==='x64'?0x01000007:arch==='arm64'?0x0100000c:0;if(!cpu||bytes.length<8)return false;
+ const magic=bytes.readUInt32BE(0);
+ if(magic===0xcffaedfe||magic===0xcefaedfe)return bytes.readUInt32LE(4)===cpu;
+ if(magic===0xfeedfacf||magic===0xfeedface)return bytes.readUInt32BE(4)===cpu;
+ const fat64=magic===0xcafebabf||magic===0xbfbafeca,little=magic===0xbebafeca||magic===0xbfbafeca;
+ if(!fat64&&magic!==0xcafebabe&&magic!==0xbebafeca)return false;
+ const read=offset=>little?bytes.readUInt32LE(offset):bytes.readUInt32BE(offset),count=read(4),stride=fat64?32:20;
+ if(count>32||bytes.length<8+count*stride)return false;
+ for(let i=0;i<count;i++)if(read(8+i*stride)===cpu)return true;return false;
+}
 export const installScript=`#!/bin/bash
 set -eu
 parent_pid="$1"
@@ -54,7 +65,7 @@ export async function prepareUpdate({zip,sha512,target,version,arch=process.arch
   const readKey=async key=>(await exec('/usr/libexec/PlistBuddy',['-c','Print '+key,plist])).stdout.trim();
   if(await readKey('CFBundleIdentifier')!=='studio.insrt.predictions'||await readKey('CFBundleShortVersionString')!==version)throw Error('Identité ou version du paquet incorrecte.');
   await exec('/usr/bin/codesign',['--verify','--deep','--strict',bundle]);
-  await exec('/usr/bin/lipo',['-verify_arch',arch==='x64'?'x86_64':'arm64',path.join(bundle,'Contents/MacOS/Predictions')]);
+  if(!supportsArchitecture(await readFile(path.join(bundle,'Contents/MacOS/Predictions')),arch))throw Error('Architecture du paquet incompatible.');
   const script=path.join(stage,'install.sh');await writeFile(script,installScript,{mode:0o700});
   return {stage,script,target};
  }catch(error){await rm(stage,{recursive:true,force:true});throw error;}
