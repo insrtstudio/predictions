@@ -14,7 +14,8 @@ app.setName('Predictions');
 if(testMode&&process.env.PREDICTIONS_DATA_DIR)app.setPath('userData',process.env.PREDICTIONS_DATA_DIR);
 let win,store,syncing=false,updateState={status:'idle',message:'Aucune vérification effectuée.'},updateAvailable=false,updateReady=false;
 function emit(type,payload={}){if(win&&!win.isDestroyed())win.webContents.send('event',{type,...payload});}
-function notify(title,body){if(testMode||!Notification.isSupported())return;const n=new Notification({title,body});n.on('click',()=>{if(!win||win.isDestroyed())createWindow();win.show();win.focus();});n.show();}
+const activeNotifications=new Set();
+function notify(title,body){if(testMode||!Notification.isSupported())return;const n=new Notification({title,body});activeNotifications.add(n);if(activeNotifications.size>100)activeNotifications.delete(activeNotifications.values().next().value);n.once('close',()=>activeNotifications.delete(n));n.once('failed',(_event,error)=>{activeNotifications.delete(n);emit('error',{message:'Notification macOS indisponible : '+error});});n.on('click',()=>{if(!win||win.isDestroyed())createWindow();win.show();win.focus();});n.show();}
 let checkingReminders=false;
 async function checkReminders(){if(checkingReminders||!store||testMode||!Notification.isSupported())return;checkingReminders=true;try{const due=dueReminders(store.state.notifications,store.state.remindersSent);if(!due.length)return;await store.update(s=>({...s,remindersSent:{...Object.fromEntries(Object.entries(s.remindersSent||{}).filter(([key])=>key.slice(-10)>=new Date(Date.now()-7*86400000).toISOString().slice(0,10))),...Object.fromEntries(due.map(d=>[d.key,true]))}}));for(const d of due)notify(GAMES[d.game].name+' · rappel',`Clôture des prises de jeu à 20 h 15 (Paris), dans ${Math.ceil((d.at-Date.now())/60000)} min.`);}finally{checkingReminders=false;}}
 function setUpdate(status,message){updateState={status,message};emit('update',updateState);}
