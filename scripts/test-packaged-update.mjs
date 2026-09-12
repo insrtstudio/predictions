@@ -1,0 +1,16 @@
+import {prepareUpdate,digest} from '../src/update-installer.mjs';
+import {execFile} from 'node:child_process';
+import {promisify} from 'node:util';
+import {readFile,access} from 'node:fs/promises';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+const exec=promisify(execFile),{version}=JSON.parse(await readFile('package.json','utf8'));
+const target='/Applications/Predictions.app',zip=path.resolve(`dist/Predictions-${version}-${process.arch}.zip`),sha512=await digest(zip);
+await assert.rejects(prepareUpdate({zip,sha512:'wrong',target,version}),/empreinte/);
+await assert.rejects(prepareUpdate({zip,sha512,target,version:'99.0.0'}),/version/);
+const prepared=await prepareUpdate({zip,sha512,target,version});
+const status=path.join(prepared.stage,'status.json');
+await exec('/bin/bash',[prepared.script,'99999999',target,prepared.stage,status,'no']);
+assert.equal(JSON.parse(await readFile(status,'utf8')).status,'installed');
+await access(path.join(prepared.stage,'previous.app/Contents/MacOS/Predictions'));
+console.log('PASS: archive digest, version, identity, signature, architecture, replacement and backup');

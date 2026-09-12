@@ -70,6 +70,8 @@ jobs:
           trap 'hdiutil detach "$mount"' EXIT
           ditto "$mount/Predictions.app" "/Applications/Predictions.app"
           node scripts/verify-macos-signature.mjs /Applications/Predictions.app
+      - name: Tester le remplacement via le nouvel installateur
+        run: node scripts/test-packaged-update.mjs
       - name: Tester le démarrage et les parcours après installation
         env:
           PREDICTIONS_APP_PATH: /Applications/Predictions.app

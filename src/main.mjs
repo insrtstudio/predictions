@@ -1,4 +1,5 @@
 import {app,BrowserWindow,ipcMain,dialog,Menu,powerMonitor,Notification} from 'electron';
+import {prepareUpdate,launchInstaller,previousUpdateStatus} from './update-installer.mjs';
 import updaterPackage from 'electron-updater';
 import {readFile,writeFile} from 'node:fs/promises';
 import path from 'node:path';
@@ -12,7 +13,7 @@ const {autoUpdater}=updaterPackage,dir=path.dirname(fileURLToPath(import.meta.ur
 const testMode=process.env.PREDICTIONS_TEST==='1';
 app.setName('Predictions');
 if(testMode&&process.env.PREDICTIONS_DATA_DIR)app.setPath('userData',process.env.PREDICTIONS_DATA_DIR);
-let win,store,syncing=false,updateState={status:'idle',message:'Aucune vérification effectuée.'},updateAvailable=false,updateReady=false;
+let win,store,syncing=false,updateState={status:'idle',message:'Aucune vérification effectuée.'},updateAvailable=false,updateReady=false,downloadedUpdate=null,installing=false;
 function emit(type,payload={}){if(win&&!win.isDestroyed())win.webContents.send('event',{type,...payload});}
 const activeNotifications=new Set();
 function notify(title,body){if(testMode||!Notification.isSupported())return;const n=new Notification({title,body});activeNotifications.add(n);if(activeNotifications.size>100)activeNotifications.delete(activeNotifications.values().next().value);n.once('close',()=>activeNotifications.delete(n));n.once('failed',(_event,error)=>{activeNotifications.delete(n);emit('error',{message:'Notification macOS indisponible : '+error});});n.on('click',()=>{if(!win||win.isDestroyed())createWindow();win.show();win.focus();});n.show();}
@@ -50,16 +51,17 @@ app.whenReady().then(async()=>{
   handle('remove-ticket',async id=>{await store.update(s=>({...s,tickets:s.tickets.filter(t=>t.id!==id)}));emit('state-changed');return true;});
   handle('check-update',async()=>{if(!app.isPackaged){setUpdate('dev','Vérification disponible dans la version installée.');return null;}setUpdate('checking','Vérification sur GitHub…');return await autoUpdater.checkForUpdates().then(()=>true);});
   handle('download-update',async()=>{if(!updateAvailable)throw Error('Aucune version disponible');await autoUpdater.downloadUpdate();return true;});
-  handle('install-update',()=>{if(!updateReady)throw Error('La mise à jour n’est pas prête');setImmediate(()=>autoUpdater.quitAndInstall());return true;});
-  autoUpdater.autoDownload=false;autoUpdater.autoInstallOnAppQuit=false;
+  handle('install-update',async()=>{if(!updateReady||!downloadedUpdate||installing)throw Error('La mise à jour n’est pas prête');installing=true;try{setUpdate('installing','Vérification du paquet et préparation du redémarrage…');const prepared=await prepareUpdate({...downloadedUpdate,target:path.resolve(process.execPath,'../../..')});await store.queue;await launchInstaller(prepared,path.join(app.getPath('userData'),'update-status.json'));setImmediate(()=>app.quit());return true;}catch(e){installing=false;setUpdate('error','Installation interrompue : '+e.message);throw e;}});
+  autoUpdater.autoDownload=true;autoUpdater.autoInstallOnAppQuit=false;
   autoUpdater.on('error',e=>setUpdate('error','Mise à jour indisponible : '+e.message));
   autoUpdater.on('update-available',info=>{updateAvailable=true;setUpdate('available',`Version ${info.version} disponible.`);});
   autoUpdater.on('update-not-available',()=>{updateAvailable=false;setUpdate('current','Vous utilisez la dernière version publiée.');});
   autoUpdater.on('download-progress',p=>setUpdate('downloading',`Téléchargement : ${Math.round(p.percent)} %`));
-  autoUpdater.on('update-downloaded',()=>{updateReady=true;setUpdate('ready','Mise à jour prête. Redémarrez pour l’installer.');});
+  autoUpdater.on('update-downloaded',info=>{const file=info.files?.find(f=>f.url.endsWith(`-${process.arch}.zip`));if(!info.downloadedFile||!file?.sha512){setUpdate('error','Paquet de mise à jour incomplet.');return;}downloadedUpdate={zip:info.downloadedFile,sha512:file.sha512,version:info.version};updateReady=true;setUpdate('ready',`Version ${info.version} prête. Redémarrez pour l’installer.`);});
+  const previous=await previousUpdateStatus(path.join(app.getPath('userData'),'update-status.json'));if(previous?.status==='error')setUpdate('error','Le remplacement précédent a échoué. L’ancienne application a été conservée ; réessayez la mise à jour.');
   Menu.setApplicationMenu(Menu.buildFromTemplate([{label:'Predictions',submenu:[{role:'about'},{type:'separator'},{role:'hide'},{role:'hideOthers'},{role:'unhide'},{type:'separator'},{role:'quit'}]},{label:'Édition',submenu:[{role:'undo'},{role:'redo'},{type:'separator'},{role:'cut'},{role:'copy'},{role:'paste'},{role:'selectAll'}]},{label:'Affichage',submenu:[{role:'reload'},{role:'resetZoom'},{role:'zoomIn'},{role:'zoomOut'},{role:'togglefullscreen'}]}]));
   createWindow();
-  if(!testMode){setInterval(()=>checkReminders().catch(e=>emit('error',{message:e.message})),30000).unref();checkReminders().catch(()=>{});powerMonitor.on('resume',()=>checkReminders().catch(()=>{}));setTimeout(()=>sync().catch(e=>emit('error',{message:e.message})),2000);setInterval(()=>sync().catch(e=>emit('error',{message:e.message})),15*60*1000).unref();powerMonitor.on('resume',()=>sync().catch(e=>emit('error',{message:e.message})));if(app.isPackaged)setTimeout(()=>autoUpdater.checkForUpdates().catch(()=>{}),10000);}
+  if(!testMode){setInterval(()=>checkReminders().catch(e=>emit('error',{message:e.message})),30000).unref();checkReminders().catch(()=>{});powerMonitor.on('resume',()=>checkReminders().catch(()=>{}));setTimeout(()=>sync().catch(e=>emit('error',{message:e.message})),2000);setInterval(()=>sync().catch(e=>emit('error',{message:e.message})),15*60*1000).unref();powerMonitor.on('resume',()=>sync().catch(e=>emit('error',{message:e.message})));if(app.isPackaged){setTimeout(()=>autoUpdater.checkForUpdates().catch(()=>{}),10000);setInterval(()=>{if(!updateReady&&!installing)autoUpdater.checkForUpdates().catch(()=>{});},15*60*1000).unref();}}
   app.on('activate',()=>{if(BrowserWindow.getAllWindows().length===0)createWindow();});
 });
 app.on('window-all-closed',()=>{if(process.platform!=='darwin'||testMode)app.quit();});
