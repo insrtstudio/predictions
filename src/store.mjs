@@ -9,6 +9,6 @@ export class Store {
   async backup(target){await this.queue;await copyFile(this.file,target);}
 }
 export function validateTicket(t){
-  const d=validateDraw(t);if(!isISODate(t.date)||!METHODS[t.method]||typeof t.id!=='string'||t.id.length>100||!Number.isFinite(t.cost)||t.cost<0||t.cost>10000||(t.gain!==null&&(!Number.isFinite(t.gain)||t.gain<0||t.gain>1e10)))throw Error('Grille invalide');
+  const d=validateDraw(t);if(!isISODate(t.date)||!(t.method==='manual'||METHODS[t.method])||typeof t.id!=='string'||t.id.length>100||!Number.isFinite(t.cost)||t.cost<0||t.cost>10000||(t.gain!==null&&(!Number.isFinite(t.gain)||t.gain<0||t.gain>1e10)))throw Error('Grille invalide');
   return {id:t.id,game:d.game,date:d.date,numbers:d.numbers,bonus:d.bonus,method:t.method,cost:t.cost,gain:t.gain};
 }

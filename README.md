@@ -88,3 +88,10 @@ Documentation : https://www.electron.build/docs/features/auto-update/
 ## Structure
 
 `engine.mjs` : probabilités, stratégies et backtests ; `diagnostics.mjs` : simulations ; `sync.mjs` / `importer.mjs` : FDJ et CSV ; `store.mjs` : persistance ; `main.mjs` / `preload.cjs` : macOS et pont IPC limité ; `renderer.mjs` / `worker.mjs` : interface et calculs isolés. Le contenu importé n’est jamais exécuté comme instruction.
+
+### Version 0.1.2 — carnet et rappels
+- Saisie de grilles simples déjà jouées (numéros, bonus, date, mise), validées et conservées dans le carnet avec la mention « Saisie manuelle ».
+- Comptes à rebours des trois jeux jusqu'à la clôture habituelle à 20 h 15 Europe/Paris, avec gestion des changements d'heure. Tirages exceptionnels exclus.
+- Notifications facultatives : rappel 15/30/60/120 minutes avant clôture et nouveaux résultats récupérés depuis les archives FDJ. Réglages persistants ; un rappel maximum par jeu et date, y compris après redémarrage.
+- L'app doit rester lancée et le Mac éveillé ; fermer la fenêtre laisse l'app tourner sur macOS. Les notifications dépendent des autorisations macOS et du mode Concentration. Aucun service push distant ; la publication des archives peut retarder les alertes de résultats.
+- Références horaires : https://www.fdj.fr/mag/questions/horaire-jeux-tirages et https://www.fdj.fr/jeux-de-tirage/eurodreams/comment-jouer

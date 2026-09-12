@@ -6,6 +6,7 @@ import {fileURLToPath} from 'node:url';
 import {GAMES,mergeDraws} from './engine.mjs';
 import {Store,validateTicket} from './store.mjs';
 import {fetchDraws} from './sync.mjs';
+import {notificationPreferences,dueReminders} from './schedule.mjs';
 import {importCSV} from './importer.mjs';
 const {autoUpdater}=updaterPackage,dir=path.dirname(fileURLToPath(import.meta.url));
 const testMode=process.env.PREDICTIONS_TEST==='1';
@@ -13,6 +14,9 @@ app.setName('Predictions');
 if(testMode&&process.env.PREDICTIONS_DATA_DIR)app.setPath('userData',process.env.PREDICTIONS_DATA_DIR);
 let win,store,syncing=false,updateState={status:'idle',message:'Aucune vérification effectuée.'},updateAvailable=false,updateReady=false;
 function emit(type,payload={}){if(win&&!win.isDestroyed())win.webContents.send('event',{type,...payload});}
+function notify(title,body){if(testMode||!Notification.isSupported())return;const n=new Notification({title,body});n.on('click',()=>{if(!win||win.isDestroyed())createWindow();win.show();win.focus();});n.show();}
+let checkingReminders=false;
+async function checkReminders(){if(checkingReminders||!store||testMode||!Notification.isSupported())return;checkingReminders=true;try{const due=dueReminders(store.state.notifications,store.state.remindersSent);if(!due.length)return;await store.update(s=>({...s,remindersSent:{...Object.fromEntries(Object.entries(s.remindersSent||{}).filter(([key])=>key.slice(-10)>=new Date(Date.now()-7*86400000).toISOString().slice(0,10))),...Object.fromEntries(due.map(d=>[d.key,true]))}}));for(const d of due)notify(GAMES[d.game].name+' · rappel',`Clôture des prises de jeu à 20 h 15 (Paris), dans ${Math.ceil((d.at-Date.now())/60000)} min.`);}finally{checkingReminders=false;}}
 function setUpdate(status,message){updateState={status,message};emit('update',updateState);}
 function handle(name,fn){ipcMain.handle(name,async(event,...args)=>{if(event.sender!==win?.webContents||event.senderFrame!==win.webContents.mainFrame)throw Error('Origine refusée');try{return {ok:true,value:await fn(...args)};}catch(e){return {ok:false,error:e.message};}});}
 async function sync(){
@@ -20,7 +24,7 @@ async function sync(){
   try{for(const game of Object.keys(GAMES)){
     try{const incoming=await fetchDraws(game),prior=new Set(store.state.draws.filter(d=>d.game===game).map(d=>d.date)),added=incoming.filter(d=>!prior.has(d.date)).length;
       const status={at:new Date().toISOString(),ok:true,added};await store.update(s=>({...s,draws:mergeDraws(s.draws,incoming),sync:{...s.sync,[game]:status}}));results.push({game,...status});
-      if(added>0&&Notification.isSupported()&&!testMode)new Notification({title:GAMES[game].name,body:`${added} nouveau(x) tirage(s) enregistré(s).`}).show();
+      if(added>0&&notificationPreferences(store.state.notifications).results)notify(GAMES[game].name,`Résultats disponibles : ${added} nouveau(x) tirage(s) enregistré(s).`);
     }catch(e){const status={at:new Date().toISOString(),ok:false,error:e.message};await store.update(s=>({...s,sync:{...s.sync,[game]:status}}));results.push({game,...status});}
   }return results;}finally{syncing=false;emit('state-changed');emit('sync-end',{results});}
 }
@@ -35,6 +39,8 @@ app.whenReady().then(async()=>{
   try{const seed=mergeDraws([],JSON.parse(await readFile(path.join(dir,'../data/seed.json'),'utf8')));store=new Store(path.join(app.getPath('userData'),'predictions.json'));await store.init(seed);}catch(e){dialog.showErrorBox('Données indisponibles',e.message);app.quit();return;}
   handle('state',()=>({...store.state,version:app.getVersion(),packaged:app.isPackaged,update:updateState}));
   handle('sync',sync);
+  handle('notification-settings',async value=>{const notifications=notificationPreferences(value);await store.update(s=>({...s,notifications}));emit('state-changed');await checkReminders();return notifications;});
+  handle('test-notification',()=>{if(!Notification.isSupported())throw Error('Notifications indisponibles sur ce système');notify('Predictions','Les notifications de Predictions sont activées si ce message apparaît.');return true;});
   handle('import',async game=>{if(!GAMES[game])throw Error('Jeu inconnu');const result=await dialog.showOpenDialog(win,{filters:[{name:'Historique CSV',extensions:['csv']}],properties:['openFile']});if(result.canceled)return null;const raw=await readFile(result.filePaths[0]);if(raw.length>30_000_000)throw Error('Fichier trop volumineux');const rows=importCSV(new TextDecoder('utf-8').decode(raw),game);await store.update(s=>({...s,draws:mergeDraws(s.draws,rows)}));emit('state-changed');return rows.length;});
   handle('export',async game=>{if(!GAMES[game])throw Error('Jeu inconnu');const g=GAMES[game],result=await dialog.showSaveDialog(win,{defaultPath:game+'-tirages.csv',filters:[{name:'CSV',extensions:['csv']}]});if(result.canceled)return null;const header=['date',...Array.from({length:g.k},(_,i)=>'n'+(i+1)),...Array.from({length:g.j},(_,i)=>'b'+(i+1))];await writeFile(result.filePath,[header.join(';'),...store.state.draws.filter(d=>d.game===game).map(d=>[d.date,...d.numbers,...d.bonus].join(';'))].join('\n'));return true;});
   handle('backup',async()=>{const r=await dialog.showSaveDialog(win,{defaultPath:'predictions-sauvegarde.json'});if(r.canceled)return null;await store.backup(r.filePath);return true;});
@@ -52,7 +58,7 @@ app.whenReady().then(async()=>{
   autoUpdater.on('update-downloaded',()=>{updateReady=true;setUpdate('ready','Mise à jour prête. Redémarrez pour l’installer.');});
   Menu.setApplicationMenu(Menu.buildFromTemplate([{label:'Predictions',submenu:[{role:'about'},{type:'separator'},{role:'hide'},{role:'hideOthers'},{role:'unhide'},{type:'separator'},{role:'quit'}]},{label:'Édition',submenu:[{role:'undo'},{role:'redo'},{type:'separator'},{role:'cut'},{role:'copy'},{role:'paste'},{role:'selectAll'}]},{label:'Affichage',submenu:[{role:'reload'},{role:'resetZoom'},{role:'zoomIn'},{role:'zoomOut'},{role:'togglefullscreen'}]}]));
   createWindow();
-  if(!testMode){setTimeout(()=>sync().catch(e=>emit('error',{message:e.message})),2000);setInterval(()=>sync().catch(e=>emit('error',{message:e.message})),15*60*1000).unref();powerMonitor.on('resume',()=>sync().catch(e=>emit('error',{message:e.message})));if(app.isPackaged)setTimeout(()=>autoUpdater.checkForUpdates().catch(()=>{}),10000);}
+  if(!testMode){setInterval(()=>checkReminders().catch(e=>emit('error',{message:e.message})),30000).unref();checkReminders().catch(()=>{});powerMonitor.on('resume',()=>checkReminders().catch(()=>{}));setTimeout(()=>sync().catch(e=>emit('error',{message:e.message})),2000);setInterval(()=>sync().catch(e=>emit('error',{message:e.message})),15*60*1000).unref();powerMonitor.on('resume',()=>sync().catch(e=>emit('error',{message:e.message})));if(app.isPackaged)setTimeout(()=>autoUpdater.checkForUpdates().catch(()=>{}),10000);}
   app.on('activate',()=>{if(BrowserWindow.getAllWindows().length===0)createWindow();});
 });
 app.on('window-all-closed',()=>{if(process.platform!=='darwin'||testMode)app.quit();});
