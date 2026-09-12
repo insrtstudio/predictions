@@ -11,7 +11,12 @@ async function launch(){return electron.launch({args:packaged?[]:['.'],...(packa
 let app;
 try{
  app=await launch();let w=await app.firstWindow();w.on('pageerror',e=>errors.push(e.message));await w.waitForSelector('.heatmap');
- assert.equal(await w.locator('.heat').count(),50);assert.equal(await w.locator('[data-countdown]').count(),3);assert.ok((await w.locator('[data-countdown]').first().textContent()).includes('h'));await w.screenshot({path:'test-results/dashboard.png',fullPage:true});
+ assert.equal(await w.locator('.heat').count(),50);assert.equal(await w.locator('[data-countdown]').count(),3);assert.ok((await w.locator('[data-countdown]').first().textContent()).length>0);await w.clock.install({time:new Date('2026-09-12T18:14:59Z')});await w.clock.runFor(1_000);
+ await w.waitForFunction(()=>document.querySelector('[data-countdown="loto"]').textContent==='Prises de jeu closes');
+ assert.ok((await w.locator('[data-draw-date="loto"]').textContent()).includes('12 sept. 2026'));
+ assert.ok((await w.locator('[data-draw-date="eurodreams"]').textContent()).includes('14 sept. 2026'));
+ assert.ok((await w.locator('[data-countdown="eurodreams"]').textContent()).includes('h'));
+ await w.screenshot({path:'test-results/dashboard.png',fullPage:true});
  await w.getByRole('button',{name:'Loto',exact:true}).click();assert.equal(await w.locator('.heat').count(),49);
  await w.getByRole('button',{name:'EuroDreams',exact:true}).click();assert.equal(await w.locator('.heat').count(),40);
  await w.getByRole('button',{name:'Mes grilles'}).click();await w.locator('#count').fill('3');await w.locator('#ticket-date').fill('2026-09-07');await w.locator('#generate').click();assert.equal(await w.locator('[data-save]').count(),3);

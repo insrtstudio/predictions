@@ -12,3 +12,13 @@ export function dueReminders(preferences,sent={},now=new Date()){
  const p=notificationPreferences(preferences);if(!p.reminders)return [];
  return Object.keys(GAMES).flatMap(game=>{const next=nextClosing(game,now),key=`${game}:${next.date}`,left=next.at-now.getTime();return left<=p.minutes*60000&&!sent[key]?[{game,key,...next}]:[];});
 }
+
+// The drawing date and the next sales deadline are distinct after 20:15.
+export function drawStatus(game,draws=[],now=new Date()){
+ const next=nextClosing(game,now),today=parisDate(now),weekday=new Date(today+'T12:00:00Z').getUTCDay();
+ if(GAMES[game].days.includes(weekday)){
+  const at=deadline(today),published=draws.some(d=>d.game===game&&d.date===today);
+  return {date:today,at,phase:published?'published':now.getTime()>=at?'closed':'open',next};
+ }
+ return {...next,phase:'open',next};
+}
